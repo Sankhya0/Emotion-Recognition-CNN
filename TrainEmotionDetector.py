@@ -1,4 +1,3 @@
-
 # import required packages
 import cv2
 from keras.models import Sequential
@@ -7,15 +6,20 @@ from keras.optimizers import Adam
 from keras.preprocessing.image import ImageDataGenerator
 
 # Initialize image data generator with rescaling
-train_data_gen = ImageDataGenerator(rescale=1./255)
+train_data_gen = ImageDataGenerator(rescale=1./255) # creating the keras image generation library. This library 
+                                                    # can also be used for data augemntation to increase the amount of training data 
+                                                    # such as performing flips, crops, and shears to images. The good thing is that it does not alter 
+                                                    # the original image and only alters it at run time without affecting the image on disk.
+                                                    # also we have normalized the image so that all image vvalues are in the range from 0 to 1
+
 validation_data_gen = ImageDataGenerator(rescale=1./255)
 
 # Preprocess all test images
-train_generator = train_data_gen.flow_from_directory(
-        'data/train',
-        target_size=(48, 48),
-        batch_size=64,
-        color_mode="grayscale",
+train_generator = train_data_gen.flow_from_directory( 
+        'data/train', # this is the image directory for training the model
+        target_size=(48, 48), # the final image size used in training will be 48x48
+        batch_size=64, # each batch used in training will be of this size
+        color_mode="grayscale", # the image will be in grayscale mode
         class_mode='categorical')
 
 # Preprocess all train images
@@ -27,12 +31,12 @@ validation_generator = validation_data_gen.flow_from_directory(
         class_mode='categorical')
 
 # create model structure
-emotion_model = Sequential()
+emotion_model = Sequential() # using the keras sequential api
 
 emotion_model.add(Conv2D(32, kernel_size=(3, 3), activation='relu', input_shape=(48, 48, 1)))
 emotion_model.add(Conv2D(64, kernel_size=(3, 3), activation='relu'))
 emotion_model.add(MaxPooling2D(pool_size=(2, 2)))
-emotion_model.add(Dropout(0.25))
+emotion_model.add(Dropout(0.25)) # using dropout regularization so that each neuron has a probability of 0.25 of being dropped out  
 
 emotion_model.add(Conv2D(128, kernel_size=(3, 3), activation='relu'))
 emotion_model.add(MaxPooling2D(pool_size=(2, 2)))
@@ -43,11 +47,14 @@ emotion_model.add(Dropout(0.25))
 emotion_model.add(Flatten())
 emotion_model.add(Dense(1024, activation='relu'))
 emotion_model.add(Dropout(0.5))
-emotion_model.add(Dense(7, activation='softmax'))
+emotion_model.add(Dense(7, activation='softmax')) # this is the final layer which will the be the output and since there 
+                                                  # are 7 different classes in the training data, there are 7 different neurons in the 
+                                                  # softmax layer
 
 cv2.ocl.setUseOpenCL(False)
 
 emotion_model.compile(loss='categorical_crossentropy', optimizer=Adam(lr=0.0001, decay=1e-6), metrics=['accuracy'])
+# using the adam optimizer with decay and the categorical crossentropy for classification error
 
 # Train the neural network/model
 emotion_model_info = emotion_model.fit_generator(
