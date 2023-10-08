@@ -1,53 +1,73 @@
+=# import required packages
 import cv2
-import numpy as np
-from keras.models import model_from_json
+from keras.models import Sequential
+from keras.layers import Conv2D, MaxPooling2D, Dense, Dropout, Flatten
+from keras.optimizers import Adam
+from keras.preprocessing.image import ImageDataGenerator
 
+# Initialize image data generator with rescaling
+train_data_gen = ImageDataGenerator(rescale=1./255) # creating the keras image generation library. This library 
+                                                    # can also be used for data augemntation to increase the amount of training data 
+                                                    # such as performing flips, crops, and shears to images. The good thing is that it does not alter 
+                                                    # the original image and only alters it at run time without affecting the image on disk.
+                                                    # also we have normalized the image so that all image vvalues are in the range from 0 to 1
 
-emotion_dict = {0: "Angry", 1: "Disgusted", 2: "Fearful", 3: "Happy", 4: "Neutral", 5: "Sad", 6: "Surprised"}
+validation_data_gen = ImageDataGenerator(rescale=1./255)
 
-# load json and create model
-json_file = open('model/emotion_model.json', 'r')
-loaded_model_json = json_file.read()
-json_file.close()
-emotion_model = model_from_json(loaded_model_json)
+# Preprocess all test images
+train_generator = train_data_gen.flow_from_directory( 
+        'data/train', # this is the image directory for training the model
+        target_size=(48, 48), # the final image size used in training will be 48x48
+        batch_size=64, # each batch used in training will be of this size
+        color_mode="grayscale", # the image will be in grayscale mode
+        class_mode='categorical')
 
-# load weights into new model
-emotion_model.load_weights("model/emotion_model.h5")
-print("Loaded model from disk")
+# Preprocess all train images
+validation_generator = validation_data_gen.flow_from_directory(
+        'data/test',
+        target_size=(48, 48),
+        batch_size=64,
+        color_mode="grayscale",
+        class_mode='categorical')
 
-# start the webcam feed
-#cap = cv2.VideoCapture(0)
+# create model structure
+emotion_model = Sequential() # using the keras sequential api
 
-# pass here your video path
-# you may download one from here : https://www.pexels.com/video/three-girls-laughing-5273028/
-cap = cv2.VideoCapture(r"C:\Users\dixit\OneDrive\Desktop\Emotion_detection_with_CNN-main\production_id_4769970 (2160p).mp4")
+emotion_model.add(Conv2D(32, kernel_size=(3, 3), activation='relu', input_shape=(48, 48, 1)))
+emotion_model.add(Conv2D(64, kernel_size=(3, 3), activation='relu'))
+emotion_model.add(MaxPooling2D(pool_size=(2, 2)))
+emotion_model.add(Dropout(0.25)) # using dropout regularization so that each neuron has a probability of 0.25 of being dropped out  
 
-while True:
-    # Find haar cascade to draw bounding box around face
-    ret, frame = cap.read()
-    frame = cv2.resize(frame, (1280, 720))
-    if not ret:
-        break
-    face_detector = cv2.CascadeClassifier('haarcascades/haarcascade_frontalface_default.xml')
-    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+emotion_model.add(Conv2D(128, kernel_size=(3, 3), activation='relu'))
+emotion_model.add(MaxPooling2D(pool_size=(2, 2)))
+emotion_model.add(Conv2D(128, kernel_size=(3, 3), activation='relu'))
+emotion_model.add(MaxPooling2D(pool_size=(2, 2)))
+emotion_model.add(Dropout(0.25))
 
-    # detect faces available on camera
-    num_faces = face_detector.detectMultiScale(gray_frame, scaleFactor=1.3, minNeighbors=5)
+emotion_model.add(Flatten())
+emotion_model.add(Dense(1024, activation='relu'))
+emotion_model.add(Dropout(0.5))
+emotion_model.add(Dense(7, activation='softmax')) # this is the final layer which will the be the output and since there 
+                                                  # are 7 different classes in the training data, there are 7 different neurons in the 
+                                                  # softmax layer
 
-    # take each face available on the camera and Preprocess it
-    for (x, y, w, h) in num_faces:
-        cv2.rectangle(frame, (x, y-50), (x+w, y+h+10), (0, 255, 0), 4)
-        roi_gray_frame = gray_frame[y:y + h, x:x + w]
-        cropped_img = np.expand_dims(np.expand_dims(cv2.resize(roi_gray_frame, (48, 48)), -1), 0)
+cv2.ocl.setUseOpenCL(False)
 
-        # predict the emotions
-        emotion_prediction = emotion_model.predict(cropped_img)
-        maxindex = int(np.argmax(emotion_prediction))
-        cv2.putText(frame, emotion_dict[maxindex], (x+5, y-20), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2, cv2.LINE_AA)
+emotion_model.compile(loss='categorical_crossentropy', optimizer=Adam(lr=0.0001, decay=1e-6), metrics=['accuracy'])
+# using the adam optimizer with decay and the categorical crossentropy for classification error
 
-    cv2.imshow('Emotion Detection', frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+# Train the neural network/model
+emotion_model_info = emotion_model.fit_generator(
+        train_generator,
+        steps_per_epoch=28709 // 64,
+        epochs=50,
+        validation_data=validation_generator,
+        validation_steps=7178 // 64)
 
-cap.release()
-cv2.destroyAllWindows()
+# save model structure in jason file
+model_json = emotion_model.to_json()
+with open("emotion_model.json", "w") as json_file:
+    json_file.write(model_json)
+
+# save trained model weight in .h5 file
+emotion_model.save_weights('emotion_model.h5')
